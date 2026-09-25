@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .coordinator_router import Actor, TaskHandler, TaskMessage, TaskResult
+from .deepseek_agent import AgentModel
 from .domain_analysis import (
     analyze_items,
     analyze_payment,
@@ -44,7 +45,9 @@ def _result(message: TaskMessage, facts: Mapping[str, Any], refs: list[str]) -> 
     )
 
 
-def make_handlers(case: dict[str, Any], evidence: ScopedEvidence) -> Mapping[Actor, TaskHandler]:
+def make_handlers(
+    case: dict[str, Any], evidence: ScopedEvidence, llm: AgentModel
+) -> Mapping[Actor, TaskHandler]:
     async def fetch(agent: SpecialistAgent, tool: str, refs: list[str], **arguments: str) -> Any:
         observation = await agent.fetch(tool, **arguments)
         data = agent.use(observation)
@@ -104,6 +107,7 @@ def make_handlers(case: dict[str, Any], evidence: ScopedEvidence) -> Mapping[Act
                 period_start=selected.get("order_purchase_timestamp"),
                 period_end=end,
             )
+        facts = await llm.review_facts("entity-agent", case, {"history": history}, facts)
         return _result(message, facts, refs)
 
     async def order(message: TaskMessage) -> TaskResult:
@@ -118,6 +122,7 @@ def make_handlers(case: dict[str, Any], evidence: ScopedEvidence) -> Mapping[Act
             facts["product_context_verified"] = bool(facts["item_ids"]) and all(
                 any(p.get("order_item_id") == item for p in products) for item in facts["item_ids"]
             )
+        facts = await llm.review_facts("order-agent", case, data, facts)
         return _result(message, facts, refs)
 
     async def shipment(message: TaskMessage) -> TaskResult:
@@ -126,7 +131,8 @@ def make_handlers(case: dict[str, Any], evidence: ScopedEvidence) -> Mapping[Act
         data = await fetch(agent, "get_shipment_summary", refs, order_id=scope["order_id"])
         if not isinstance(data, dict) or data.get("order_id") != scope["order_id"]:
             raise ValueError("shipment evidence does not match resolved order")
-        return _result(message, analyze_shipment(data, scope), refs)
+        facts = await llm.review_facts("shipment-agent", case, data, analyze_shipment(data, scope))
+        return _result(message, facts, refs)
 
     async def payment(message: TaskMessage) -> TaskResult:
         agent, refs = SpecialistAgent("payment-agent", evidence), []
@@ -146,6 +152,7 @@ def make_handlers(case: dict[str, Any], evidence: ScopedEvidence) -> Mapping[Act
                 if not isinstance(refund, dict) or refund.get("order_id") != scope["order_id"]:
                     raise ValueError("refund evidence does not match resolved order")
                 facts.update(analyze_refund(refund, scope))
+        facts = await llm.review_facts("payment-agent", case, data, facts)
         return _result(message, facts, refs)
 
     async def policy(message: TaskMessage) -> TaskResult:
@@ -210,6 +217,8 @@ def make_handlers(case: dict[str, Any], evidence: ScopedEvidence) -> Mapping[Act
         )
         if facts.get("refund_unavailable"):
             facts.update(evidence_coverage=0.4, analysis_complete=False)
+        candidate = decide_policy(facts)
+        facts.update(await llm.review_policy(case, facts, candidate))
         return _result(message, facts, refs)
 
     return {

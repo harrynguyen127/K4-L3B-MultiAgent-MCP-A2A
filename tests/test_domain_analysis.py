@@ -15,7 +15,7 @@ from student_agent.domain_analysis import (
 from student_agent.trace import TraceWriter
 from student_agent.verifier_agent import VerificationError, check_evidence_coverage
 from student_agent.workflow import solve_case
-from test_case_adapter import SCHEMAS, FakeGateway
+from test_case_adapter import SCHEMAS, FakeAgentModel, FakeGateway
 
 
 @pytest.mark.parametrize(
@@ -146,7 +146,7 @@ def test_evidence_drives_all_issue_families(tmp_path: Path, issue: str, refund: 
     )
     trace = TraceWriter(tmp_path / "trace.jsonl", Contracts(SCHEMAS))
     trace.emit(case_id="CASE_001", event_type="case_received", actor="coordinator")
-    output = asyncio.run(solve_case(case, gateway, trace))
+    output = asyncio.run(solve_case(case, gateway, trace, FakeAgentModel()))
     assert output["assessment"]["primary_issue"] == issue
     assert output["financial_resolution"]["recommended_refund_brl"] == refund
     assert output["entity_resolution"]["rejected_candidates"] == ["wrong-order"]

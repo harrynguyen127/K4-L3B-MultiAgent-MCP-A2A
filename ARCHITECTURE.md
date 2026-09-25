@@ -106,7 +106,7 @@ Ba lớp contract bảo vệ biên hệ thống:
 | Shipment specialist | Order/shipment ID đã resolve | Dựng timeline, phân biệt seller delay, logistics delay, lost/returned | Tool domain `shipment`; đọc order fact đã handoff | Shipment analysis kèm evidence refs |
 | Payment/refund specialist | Order/payment reference đã resolve | Reconcile capture/refund, tính tổng BRL và refundable amount | Tool domain `payment`, `refund`; không quyết định policy | Payment analysis kèm evidence refs |
 | Policy/conflict resolver | Fact bundle, conflict và policy question cụ thể | Áp dụng source precedence, policy hiệu lực và biểu diễn conflict chưa giải quyết | Tool domain `policy`; không tự mở rộng candidate | Conflict decisions, root cause, action/refund đề xuất |
-| Verifier | Draft output, toàn bộ evidence index và trace index của case | Kiểm tra invariants, hạ confidence hoặc chặn finalize | Không gọi MCP trong đường chạy chuẩn; chỉ trả task bổ sung có scope cho coordinator | `verification_completed` và output hợp lệ hoặc lỗi hữu hạn |
+| Verifier | Output đã assembly, tập evidence đã consume và evidence-domain index của case | Kiểm tra JSON Schema, lifecycle và các consistency invariant; pass hoặc chặn finalize | Không gọi MCP và không đi qua `Coordinator.assign()` trong đường chạy hiện tại | Phát đúng một `verification_completed` với `PASS`/`FAIL` |
 
 ### 2.1 Least privilege
 
@@ -226,7 +226,9 @@ sequenceDiagram
     participant CLI
     participant C as Coordinator
     participant E as Entity agent
-    participant S as Specialists
+    participant O as Order agent
+    participant S as Shipment agent
+    participant R as Payment agent
     participant P as Policy/conflict
     participant M as MCP Gateway
     participant V as Verifier
@@ -239,36 +241,32 @@ sequenceDiagram
 
     alt entity resolved
         par order/product
-            C->>S: task_assigned(order_analysis)
-            S->>M: allowed domain call
-            M-->>S: evidence
+            C->>O: task_assigned(analyse_order)
+            O->>M: get_order_items / get_product_context
+            M-->>O: scoped evidence
         and shipment
-            C->>S: task_assigned(shipment_analysis)
-            S->>M: allowed domain call
-            M-->>S: evidence
+            C->>S: task_assigned(analyse_shipment)
+            S->>M: get_shipment_summary
+            M-->>S: scoped evidence
         and payment/refund
-            C->>S: task_assigned(payment_analysis)
-            S->>M: allowed domain call
-            M-->>S: evidence
+            C->>R: task_assigned(analyse_payment)
+            R->>M: get_payment_timeline / optional refund timeline
+            M-->>R: scoped evidence
         end
-        S-->>C: handoff(fact bundles + evidence_refs)
-        C->>P: resolve conflicts/apply policy
-        P->>M: policy-only call when needed
+        O-->>C: handoff(order facts + evidence_refs)
+        S-->>C: handoff(shipment facts + evidence_refs)
+        R-->>C: handoff(payment facts + evidence_refs)
+        C->>P: task_assigned(resolve_policy_and_conflicts)
+        P->>M: get_policy
         M-->>P: policy evidence
         P-->>C: decision + actions
     else ambiguous or not found
-        C->>E: at most one narrow follow-up
-        E-->>C: needs_investigation
+        C->>C: skip specialist fan-out
     end
 
-    C->>V: draft + evidence/trace index
-    alt repairable failure and no repair used
-        V-->>C: repair request
-        C->>S: scoped repair task
-        S-->>C: corrected bundle
-        C->>V: revised draft
-    end
-    V-->>C: verification_completed
+    C->>C: build_output
+    C->>V: output + consumed refs + domain index
+    V-->>C: verification_completed PASS/FAIL
     C-->>CLI: verified output
     CLI->>CLI: schema validate, atomic write, case_finalized
 ```
@@ -276,11 +274,11 @@ sequenceDiagram
 Nhánh rẽ chính:
 
 - entity `resolved`: coordinator mới fan-out các specialist độc lập;
-- entity `ambiguous/not_found`: không fan-out điều tra rộng, chỉ cho phép một query
-  hẹp bổ sung rồi assembly kết quả `needs_investigation`;
+- entity `ambiguous/not_found`: không fan-out ba specialist; assembly kết quả bảo thủ
+  từ fact bundle entity hiện có;
 - specialist failure: handoff failure envelope về coordinator, không chuyển trực tiếp
   cho specialist khác;
-- verifier `FAIL`: coordinator được một repair pass. `FAIL` lần hai chặn finalize;
+- verifier `FAIL`: chặn finalize ngay trong đường chạy hiện tại; chưa có repair pass;
 - mọi handoff phải giữ nguyên `case_id`/`correlation_id`, tạo `message_id` mới và trỏ
   `causation_id` về message sinh ra nó.
 
@@ -337,12 +335,12 @@ nếu số tiền chưa được chứng minh.
 | Failure | Retry budget | Fallback | Trace decision code |
 | --- | ---: | --- | --- |
 | MCP connect/session failure | 1 reconnect cho run | Dừng run; không tạo output giả | CLI error; chưa finalize case |
-| MCP tool timeout/transient error | Tối đa 1 retry cùng canonical arguments | Đánh dấu task failed; dùng `insufficient_evidence` nếu output vẫn an toàn | Handoff `MCP_RETRY_EXHAUSTED` |
-| MCP permanent error hoặc response sai schema | 0 | Không consume response; trả failure cho coordinator | Handoff `INVALID_MCP_RESPONSE` |
-| Entity not found/ambiguous | Tối đa 1 query hẹp bổ sung | `needs_investigation`, confidence ≤ 0.50 | `ENTITY_NOT_FOUND` / `ENTITY_AMBIGUOUS` |
+| MCP tool timeout/transient error | Tối đa 1 retry cùng canonical arguments | Task trả `failed`/`timed_out`; workflow hiện tại dừng case và không finalize output | Handoff `TASK_FAILED` / `TASK_TIMEOUT` |
+| MCP permanent error hoặc response sai schema | 0 | Không consume response; task failure làm workflow dừng case | Handoff `TASK_FAILED` |
+| Entity not found/ambiguous | 0 query bổ sung sau handoff hiện tại | Không fan-out specialist; assembly kết quả bảo thủ với confidence ≤ 0.50 | Handoff `COMPLETED`, decision thể hiện trong output |
 | Source conflict | 0 retry nếu không có nguồn mới cụ thể | Áp dụng precedence hoặc biểu diễn unresolved conflict | `CONFLICT_RESOLVED` / `CONFLICT_UNRESOLVED` |
-| Specialist result sai envelope/thiếu evidence | 1 lần yêu cầu sửa, không tự mở rộng scope | Loại result và hạ trạng thái | `INVALID_SPECIALIST_RESULT` |
-| Verification fail có thể sửa | 1 repair pass qua coordinator | Verify lại; nếu vẫn fail thì không finalize | `REPAIR_REQUIRED` / `FAIL` |
+| Specialist result sai envelope/thiếu evidence | 0 | Raise validation error; không finalize case | Handoff failure hoặc workflow error |
+| Verification fail | 0 | Phát `verification_completed=FAIL`, raise `VerificationError`, không finalize | `FAIL` |
 
 ### 5.1 MCP retry state machine
 

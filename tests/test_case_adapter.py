@@ -13,6 +13,26 @@ from student_agent.workflow import solve_case
 SCHEMAS = Path(__file__).resolve().parents[1] / "contracts" / "schemas"
 
 
+class FakeAgentModel:
+    """Predictable LLM double: accept the reviewed candidate without network calls."""
+
+    async def plan(self, case: dict[str, Any]) -> tuple[str, ...]:
+        return ("order-agent", "shipment-agent", "payment-agent")
+
+    async def review_facts(
+        self, role: str, case: dict[str, Any], evidence: Any, candidate: dict[str, Any]
+    ) -> dict[str, Any]:
+        return candidate
+
+    async def review_policy(
+        self, case: dict[str, Any], facts: dict[str, Any], candidate: dict[str, Any]
+    ) -> dict[str, Any]:
+        return candidate
+
+    async def verify(self, case: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+        return {"approved": True, "issues": []}
+
+
 class FakeGateway:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
@@ -103,7 +123,7 @@ def test_solve_case_runs_reviewed_route_with_real_evidence_refs(tmp_path: Path) 
     gateway = FakeGateway()
     trace.emit(case_id=case["case_id"], event_type="case_received", actor="coordinator")
 
-    output = asyncio.run(solve_case(case, gateway, trace))  # type: ignore[arg-type]
+    output = asyncio.run(solve_case(case, gateway, trace, FakeAgentModel()))  # type: ignore[arg-type]
 
     assert output["entity_resolution"]["status"] == "resolved"
     assert output["shipment_analysis"]["verdict"] == "on_time"
@@ -111,3 +131,5 @@ def test_solve_case_runs_reviewed_route_with_real_evidence_refs(tmp_path: Path) 
     assert len(output["evidence_refs"]) == 6
     assert len(gateway.calls) == 6
     contracts.validate_output(output, "adapter output")
+    async def plan(self, case: dict[str, Any]) -> tuple[str, ...]:
+        return ("order-agent", "shipment-agent", "payment-agent")

@@ -12,6 +12,7 @@ from pathlib import Path
 from .cases import CaseSet, load_case_set
 from .config import Settings
 from .contracts import Contracts
+from .deepseek_agent import DeepSeekAgentModel
 from .mcp_gateway import connect_gateway
 from .submission import package_submission, validate_artifacts
 from .trace import TraceWriter
@@ -134,6 +135,9 @@ async def _run(root: Path, *, fresh: bool = False) -> None:
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     trace = TraceWriter(trace_path, contracts)
     completed, started = _resume_state(root, case_set, contracts, trace)
+    llm = DeepSeekAgentModel(
+        settings.deepseek_api_key, settings.deepseek_base_url, settings.deepseek_model
+    )
     if completed:
         print(f"Resuming: {len(completed)} completed cases retained")
     if len(completed) == len(case_set.case_ids):
@@ -150,7 +154,7 @@ async def _run(root: Path, *, fresh: bool = False) -> None:
             case = case_set.cases[case_id]
             if case_id not in started:
                 trace.emit(case_id=case_id, event_type="case_received", actor="coordinator")
-            output = await solve_case(case, gateway, trace)
+            output = await solve_case(case, gateway, trace, llm)
             contracts.validate_output(output, f"outputs/{case_id}.json")
             if output.get("case_id") != case_id:
                 raise ValueError(f"solver returned a mismatched case_id for {case_id}")
@@ -170,6 +174,9 @@ async def _rerun_case(root: Path, case_id: str) -> None:
     if case_id not in cases.case_ids:
         raise ValueError("case is outside case-set")
     settings, contracts = Settings.load(root), Contracts(root / "contracts" / "schemas")
+    llm = DeepSeekAgentModel(
+        settings.deepseek_api_key, settings.deepseek_base_url, settings.deepseek_model
+    )
     target, trace_path = root / "outputs" / f"{case_id}.json", root / "traces" / "trace.jsonl"
     if not target.is_file() or not trace_path.is_file():
         raise ValueError("rerun-case requires an existing completed case")
@@ -184,7 +191,7 @@ async def _rerun_case(root: Path, case_id: str) -> None:
         async with connect_gateway(
             settings.mcp_endpoint, settings.team_api_key, contracts
         ) as gateway:
-            output = await solve_case(cases.cases[case_id], gateway, trace)
+            output = await solve_case(cases.cases[case_id], gateway, trace, llm)
         trace.emit(case_id=case_id, event_type="case_finalized", actor="coordinator")
         new_events = [
             json.loads(line) for line in trace.path.read_text(encoding="utf-8").splitlines()

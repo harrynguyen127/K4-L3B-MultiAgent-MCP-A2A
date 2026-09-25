@@ -37,7 +37,15 @@ day09 --help
 COMPETITION_API_URL=http://127.0.0.1:8081
 COMPETITION_TEAM_API_KEY=sk-team-your_key
 MCP_ENDPOINT=http://127.0.0.1:8001/mcp
+DEEPSEEK_API_KEY=your_deepseek_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
 ```
+
+Coordinator và mỗi business agent dùng DeepSeek để lập kế hoạch, review evidence và
+trả JSON có cấu trúc. Verifier cũng dùng DeepSeek trước lớp kiểm tra deterministic.
+Python chỉ giữ quyền gọi MCP, bảo vệ `evidence_ref`, validate schema và thực hiện các
+invariant cuối cùng; API key không được đưa vào prompt hoặc trace.
 
 ## 3. Tải input
 

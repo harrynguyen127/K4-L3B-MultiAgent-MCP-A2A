@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from .case_adapter import CATALOG, build_output, make_handlers
 from .contracts import Contracts
 from .coordinator_router import Actor, Coordinator, TaskHandler, TaskResult
+from .deepseek_agent import AgentModel
 from .mcp_evidence_collector import ScopedEvidence
 from .policy_agent import decide_policy
 from .trace import TraceWriter
@@ -34,6 +34,7 @@ async def run_case_with_handlers(
     evidence: ScopedEvidence,
     contracts: Contracts,
     trace: TraceWriter,
+    llm: AgentModel | None = None,
 ) -> dict[str, Any]:
     """Run the fixed A2A route once case-specific handlers and mapping are supplied."""
     case_id = case["case_id"]
@@ -41,6 +42,11 @@ async def run_case_with_handlers(
         raise ValueError("evidence context belongs to a different case")
     coordinator = Coordinator(case_id, trace, handlers)
     results: dict[str, TaskResult] = {}
+    selected_agents = (
+        await llm.plan(case)
+        if llm is not None
+        else ("order-agent", "shipment-agent", "payment-agent")
+    )
     # Entity resolution may make two sequential MCP calls.
     entity = await coordinator.assign(
         "entity-agent",
@@ -53,11 +59,12 @@ async def run_case_with_handlers(
         raise ValueError("entity handoff cites evidence not consumed in this case")
     results["entity"] = entity
     if entity.facts.get("status") == "resolved":
-        tasks = (
-            ("order", "order-agent", "analyse_order"),
-            ("shipment", "shipment-agent", "analyse_shipment"),
-            ("payment", "payment-agent", "analyse_payment"),
-        )
+        available_tasks = {
+            "order-agent": ("order", "order-agent", "analyse_order"),
+            "shipment-agent": ("shipment", "shipment-agent", "analyse_shipment"),
+            "payment-agent": ("payment", "payment-agent", "analyse_payment"),
+        }
+        tasks = tuple(available_tasks[actor] for actor in selected_agents)
         specialist_results = await asyncio.gather(
             *(
                 coordinator.assign(
@@ -92,8 +99,19 @@ async def run_case_with_handlers(
             raise ValueError("policy agent did not complete")
         if not set(policy.evidence_refs) <= evidence.consumed_by("policy-agent"):
             raise ValueError("policy handoff cites evidence not consumed in this case")
-        normalized_facts = {**policy_inputs, **policy.facts}
-        policy = replace(policy, facts={**policy.facts, **decide_policy(normalized_facts)})
+        if "assessment" not in policy.facts:
+            # Compatibility for injected/custom handlers. Production handlers obtain
+            # this decision from the DeepSeek policy agent.
+            normalized_facts = {**policy_inputs, **policy.facts}
+            policy = TaskResult(
+                policy.case_id,
+                policy.message_id,
+                policy.actor,
+                policy.status,
+                {**policy.facts, **decide_policy(normalized_facts)},
+                policy.evidence_refs,
+                policy.decision_code,
+            )
         results["policy"] = policy
     elif entity.facts.get("status") not in {"ambiguous", "not_found"}:
         raise ValueError("entity agent returned an invalid status")
@@ -108,6 +126,11 @@ async def run_case_with_handlers(
         decision_code=output["assessment"]["primary_issue"].upper(),
         evidence_refs=decision_refs,
     )
+    if llm is not None:
+        review = await llm.verify(case, output)
+        if not review["approved"]:
+            issues = "; ".join(str(item) for item in review["issues"][:5])
+            raise ValueError(f"DeepSeek verifier rejected output: {issues}")
     verify_output(
         output,
         case_id=case_id,
@@ -121,7 +144,7 @@ async def run_case_with_handlers(
 
 
 async def solve_case(
-    case: dict[str, Any], gateway: EvidenceGateway, trace: TraceWriter
+    case: dict[str, Any], gateway: EvidenceGateway, trace: TraceWriter, llm: AgentModel
 ) -> dict[str, Any]:
     """Run the reviewed, case-scoped evidence route with conservative decisions."""
     discovered = {tool.name: tool for tool in await gateway.describe_tools()}
@@ -140,9 +163,10 @@ async def solve_case(
     )
     return await run_case_with_handlers(
         case,
-        handlers=make_handlers(case, evidence),
+        handlers=make_handlers(case, evidence, llm),
         build_output=build_output,
         evidence=evidence,
         contracts=trace.contracts,
         trace=trace,
+        llm=llm,
     )
