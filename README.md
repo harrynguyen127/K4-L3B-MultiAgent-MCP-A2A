@@ -1,18 +1,10 @@
-# K4 L3B — Multi-Agent MCP + A2A
+# K4 L3B — Advanced Multi-Agent MCP + A2A
 
 ## Mục tiêu
 
 Xây dựng hệ thống multi-agent điều tra khiếu nại thương mại điện tử.
 
 Ngoài kết luận nghiệp vụ, yêu cầu cần phải xử lý xử lý entity resolution, customer context, shipment/payment analysis, source conflict và hiệu quả sử dụng MCP.
-
-## Dữ liệu
-
-Tham khảo dữ liệu tại: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
-
-## Quy tắc đặt tên
-
-Làm nhóm hoặc cá nhân, khi fork về các bạn giữ nguyên tên gốc repo, không đổi tên
 
 ## 1. Cài đặt
 
@@ -150,34 +142,6 @@ Hoàn thiện mô tả thiết kế trong `ARCHITECTURE.md`.
 day09 run
 day09 validate
 ```
-
-`day09 run` giữ các case đã hoàn tất và tiếp tục từ case dở dang sau khi
-kiểm tra output cùng trace. Chạy lại lệnh này không gọi lại MCP cho các case
-đã hoàn tất.
-
-Sau khi thay đổi logic và muốn tạo lại toàn bộ kết quả với evidence mới:
-
-```bash
-day09 run --fresh
-day09 validate
-day09 package --output dist/submission.zip
-```
-
-`--fresh` chuyển output, trace và ZIP cũ vào `run-backups/<timestamp>/` trước khi
-chạy. Bộ backup không được đưa vào ZIP nộp bài. Validation cục bộ kiểm tra schema,
-case scope, domain evidence tối thiểu và trace; server vẫn quyết định provenance
-team/run và các yêu cầu evidence private.
-
-Để cập nhật riêng một case đã hoàn tất sau khi sửa logic:
-
-```bash
-day09 rerun-case L3B_CASE_012
-day09 validate
-day09 package --output dist/submission.zip
-```
-
-Lệnh này lấy evidence mới và thay cả output lẫn nhóm trace của case đó; bản trước
-được sao lưu trong `run-backups`. Cần đóng gói lại sau khi cập nhật case.
 
 Kết quả được tạo tại:
 
