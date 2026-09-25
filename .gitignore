@@ -27,6 +27,7 @@ traces/*
 dist/*
 !dist/.gitkeep
 run-backups/
+mock-runs/
 *.zip
 *.log
 

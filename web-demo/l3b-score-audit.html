@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>L3B Score Audit — Trước và sau</title>
+  <style>
+    :root{color-scheme:dark;--bg:#111315;--panel:#191c20;--panel2:#20242a;--line:#343940;--text:#f1f3f5;--muted:#a7adb5;--blue:#67a8ff;--green:#62c58b;--yellow:#e5b95c;--radius:10px}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:40px 0 64px}h1{font-size:28px;letter-spacing:-.03em;margin:0 0 6px}h2{font-size:18px;margin:32px 0 14px}p{margin:0}.muted{color:var(--muted)}
+    .stats,.compare{display:grid;gap:14px}.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin:24px 0}.compare{grid-template-columns:1fr 1fr}.stat{padding:18px 0;border-top:1px solid var(--line)}.stat b{display:block;font-size:23px;letter-spacing:-.02em}.stat span{color:var(--muted);font-size:12px}
+    .notice{border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:var(--radius);padding:14px 16px;background:var(--panel)}.notice.warning{border-left-color:var(--yellow)}.notice.success{border-left-color:var(--green)}.notice strong{display:block;margin-bottom:4px}
+    .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}select{min-width:360px;max-width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:9px 10px}.pill{border:1px solid var(--line);border-radius:999px;padding:4px 9px;color:var(--muted);font-size:12px}.pill.good{color:var(--green)}.pill.warn{color:var(--yellow)}.pill.info{color:var(--blue)}
+    .card{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);overflow:hidden}.card-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-size:12px}.card-body{padding:18px}.issue{font-size:21px;font-weight:700;overflow-wrap:anywhere}.mini{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.mini div{border-top:1px solid var(--line);padding-top:10px}.mini b{display:block;font-size:17px}.mini span{font-size:11px;color:var(--muted)}
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius)}table{width:100%;border-collapse:collapse;min-width:740px}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--panel2)}tr:last-child td{border-bottom:0}tbody tr:nth-child(even){background:rgba(255,255,255,.018)}td:nth-child(3){color:var(--green)}
+    footer{margin-top:28px;color:var(--muted);font-size:12px}@media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.compare{grid-template-columns:1fr}main{width:min(100% - 20px,1180px);padding-top:24px}}@media(max-width:480px){.stats{grid-template-columns:1fr}.mini{grid-template-columns:1fr}select{min-width:100%}}
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>L3B — So sánh trước và sau</h1><p class="muted">Dashboard tương tác cho 100 case, dựa trên output backup và bộ output đã validate hiện tại.</p></header>
+  <section class="stats">
+    <div class="stat"><b>100 → 0</b><span>Case insufficient_evidence</span></div>
+    <div class="stat"><b>0,500 → 0,855</b><span>Confidence trung bình</span></div>
+    <div class="stat"><b>0 → 70</b><span>Case có refund/action</span></div>
+    <div class="stat"><b>10 → 0</b><span>Conflict chưa giải quyết</span></div>
+  </section>
+  <div class="notice"><strong>Nguồn cải thiện chính</strong>Chọn đúng snapshot theo thời điểm, đối soát payment ledger, gọi refund evidence khi cần và áp dụng policy vào kết luận cuối.</div>
+
+  <h2>Xem từng case</h2>
+  <div class="toolbar"><label for="case">Case</label><select id="case"></select><span id="status" class="pill"></span><span id="confidence" class="pill info"></span></div>
+  <section class="compare">
+    <article class="card"><div class="card-head"><span id="old-id"></span><span class="pill warn">Trước</span></div><div class="card-body"><div class="issue">insufficient_evidence</div><div class="mini"><div><b>0,50</b><span>Confidence</span></div><div><b>0 BRL</b><span>Refund</span></div><div><b>6</b><span>Evidence refs</span></div></div><p class="muted">Hai claim đều insufficient_evidence; không có action hay trách nhiệm nghiệp vụ cụ thể.</p></div></article>
+    <article class="card"><div class="card-head"><span id="new-id"></span><span class="pill good">Sau</span></div><div class="card-body"><div id="issue" class="issue"></div><div class="mini"><div><b id="new-confidence"></b><span>Confidence</span></div><div><b id="refund"></b><span>Refund</span></div><div><b id="refs"></b><span>Evidence refs</span></div></div><p id="claims" class="muted"></p></div></article>
+  </section>
+
+  <h2 id="detail-title">Chi tiết thay đổi</h2><div class="table-wrap"><table><thead><tr><th>Trường</th><th>Trước</th><th>Sau</th><th>Vì sao tốt hơn</th></tr></thead><tbody id="details"></tbody></table></div>
+  <div id="reason" class="notice success" style="margin-top:14px"></div>
+
+</main>
+<script>
+const cycle=["late_delivery_seller","late_delivery_logistics","valid_split_payment","payment_mismatch","duplicate_charge","refund_pending","refund_failed","unsupported_claim","canceled_order_paid","unavailable_order_paid"];
+const facts={
+late_delivery_logistics:["action_required",16,7,16,"logistics_delay","insufficient_evidence","supported / partially_supported"],
+valid_split_payment:["no_action",0,7,89,"on_time","reconciled","supported / unsupported"],
+payment_mismatch:["action_required",35,7,35,"on_time","capture_mismatch","supported / partially_supported"],
+duplicate_charge:["action_required",64,7,128,"on_time","duplicate_capture","supported / partially_supported"],
+refund_pending:["needs_investigation",0,8,89,"on_time","refund_pending","supported / unsupported"],
+refund_failed:["action_required",52,8,52,"on_time","refund_failed","supported / partially_supported"],
+unsupported_claim:["no_action",0,7,89,"on_time","reconciled","supported / unsupported"],
+canceled_order_paid:["action_required",79,7,79,"insufficient_evidence","insufficient_evidence","supported / partially_supported"],
+unavailable_order_paid:["action_required",89,7,89,"insufficient_evidence","insufficient_evidence","supported / partially_supported"],
+late_delivery_seller:["action_required",18,7,18,"seller_delay","insufficient_evidence","supported / partially_supported"]};
+const reasons={
+late_delivery_logistics:"Đối chiếu ngày giao dự kiến với sự kiện giao thực tế và actor xác nhận để quy trách nhiệm cho đơn vị vận chuyển; policy hoàn phí vận chuyển.",
+late_delivery_seller:"Shipping limit của item bị seller vi phạm, nên trách nhiệm được gắn với seller thay vì kết luận giao trễ chung chung.",
+valid_split_payment:"Các payment sequence được đối soát thành một tổ hợp duy nhất bằng tổng giá trị đơn; nhiều capture hợp lệ không còn bị hiểu nhầm là trùng tiền.",
+payment_mismatch:"Tổng capture trong đúng time window không khớp tổng item và freight; policy yêu cầu reconcile payment và hoàn phần chênh lệch.",
+duplicate_charge:"Ledger cho thấy capture dư so với giá trị đơn sau khi loại bản ghi lịch sử; phần dư được xác định là duplicate charge.",
+refund_pending:"Refund timeline có yêu cầu đang pending; case được giữ ở needs_investigation và không tự tạo thêm refund.",
+refund_failed:"Refund timeline ghi nhận trạng thái failed; policy chuyển thành retry_refund với số tiền có căn cứ.",
+unsupported_claim:"Shipment đúng hạn và payment đã reconcile, vì vậy claim bị bằng chứng độc lập bác bỏ; không cần hoàn tiền.",
+canceled_order_paid:"Snapshot đúng thời điểm cho thấy đơn đã hủy nhưng vẫn có capture; policy yêu cầu hoàn lại phần đã thanh toán.",
+unavailable_order_paid:"Đơn không thể thực hiện nhưng payment đã capture; policy yêu cầu issue_refund và xác định bên chịu trách nhiệm."};
+const cases=Array.from({length:100},(_,i)=>{const n=i+1,s=String(n).padStart(3,"0"),issue=s==="098"?"late_delivery_seller":cycle[n%10],f=facts[issue];return{id:`L3B_CASE_${s}`,issue,status:f[0],refund:f[1],refs:f[2],captured:["039","089"].includes(s)?178:s==="071"?89:f[3],shipment:f[4],payment:f[5],claims:s==="098"?"insufficient_evidence / partially_supported":f[6],confidence:["039","071","089","098"].includes(s)?.98:.85}});
+const $=id=>document.getElementById(id),fmt=n=>`${n.toLocaleString("vi-VN")} BRL`,select=$("case");
+cases.forEach(c=>select.add(new Option(`${c.id} — ${c.issue}`,c.id)));
+function render(){const c=cases.find(x=>x.id===select.value)||cases[0];$("old-id").textContent=$("new-id").textContent=c.id;$("issue").textContent=c.issue;$("status").textContent=c.status;$("status").className=`pill ${c.status==="no_action"?"good":c.status==="needs_investigation"?"warn":"info"}`;$("confidence").textContent=`confidence ${c.confidence.toFixed(2)}`;$("new-confidence").textContent=c.confidence.toFixed(2);$("refund").textContent=fmt(c.refund);$("refs").textContent=c.refs;$("claims").textContent=`Claim verdicts: ${c.claims}`;$("detail-title").textContent=`Chi tiết thay đổi — ${c.id}`;
+const rows=[["Primary issue","insufficient_evidence",c.issue,"Phân loại từ evidence và policy"],["Case status","needs_investigation",c.status,"Action bám theo rule của issue"],["Confidence","0,50 cố định",c.confidence.toFixed(2),"Theo coverage và conflict"],["Refund","0 BRL",fmt(c.refund),"Không vượt captured/refunded amount"],["Captured","Không ổn định hoặc null",fmt(c.captured),"Lọc time window và reconcile ledger"],["Shipment","Bảo thủ hoặc conflicting",c.shipment,"Đối chiếu summary, history và event"],["Payment","insufficient_evidence",c.payment,"Phân loại capture/refund timeline"],["Claim verdicts","insufficient / insufficient",c.claims,"Evidence riêng theo claim"],["Evidence refs","6",String(c.refs),"Đủ domain, không dùng ref chéo case"]];$("details").innerHTML=rows.map(r=>`<tr>${r.map(v=>`<td>${v}</td>`).join("")}</tr>`).join("");
+const warning=c.id==="L3B_CASE_098";$("reason").className=`notice ${warning?"warning":"success"}`;$("reason").innerHTML=`<strong>Lý do cải thiện</strong>${reasons[c.issue]} ${warning?"Case 098 có hai snapshot cùng order_id; thuật toán chọn lần mua gần nhất trước opened_at nên kết luận vẫn phụ thuộc private oracle.":"Kết luận được nối với evidence đúng domain và verifier kiểm tra trước khi ghi output."}`;history.replaceState(null,"",`#${c.id}`)}
+select.addEventListener("change",render);const initial=location.hash.slice(1);if(cases.some(c=>c.id===initial))select.value=initial;render();
+</script>
+</body>
+</html>
