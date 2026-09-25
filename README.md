@@ -151,6 +151,34 @@ day09 run
 day09 validate
 ```
 
+`day09 run` giữ các case đã hoàn tất và tiếp tục từ case dở dang sau khi
+kiểm tra output cùng trace. Chạy lại lệnh này không gọi lại MCP cho các case
+đã hoàn tất.
+
+Sau khi thay đổi logic và muốn tạo lại toàn bộ kết quả với evidence mới:
+
+```bash
+day09 run --fresh
+day09 validate
+day09 package --output dist/submission.zip
+```
+
+`--fresh` chuyển output, trace và ZIP cũ vào `run-backups/<timestamp>/` trước khi
+chạy. Bộ backup không được đưa vào ZIP nộp bài. Validation cục bộ kiểm tra schema,
+case scope, domain evidence tối thiểu và trace; server vẫn quyết định provenance
+team/run và các yêu cầu evidence private.
+
+Để cập nhật riêng một case đã hoàn tất sau khi sửa logic:
+
+```bash
+day09 rerun-case L3B_CASE_012
+day09 validate
+day09 package --output dist/submission.zip
+```
+
+Lệnh này lấy evidence mới và thay cả output lẫn nhóm trace của case đó; bản trước
+được sao lưu trong `run-backups`. Cần đóng gói lại sau khi cập nhật case.
+
 Kết quả được tạo tại:
 
 ```text
